@@ -1,0 +1,136 @@
+# app_v3.py
+import streamlit as st
+import pandas as pd
+from datetime import datetime
+from supabase import create_client
+import math
+
+# =====================================================
+# 🔐 Passwörter
+# =====================================================
+USER_PASSWORD = "oyysouth"
+SILENT_USER_PASSWORD = "silentlogin"
+ADMIN_PASSWORD = "sebaforceo"
+
+# =====================================================
+# 🌍 Länder-Konfiguration
+# =====================================================
+COUNTRY_CONFIG = {
+    "DE": {"name": "Deutschland", "currency": "€", "features": {"pipeline": True, "advanced_pricing": True}},
+    "AT": {"name": "Österreich", "currency": "€", "features": {"pipeline": True, "advanced_pricing": True}},
+    "CH": {"name": "Schweiz", "currency": "CHF", "features": {"pipeline": False, "advanced_pricing": True}},
+    "BE": {"name": "Belgien", "currency": "€", "features": {"pipeline": False, "advanced_pricing": True}},
+    "LU": {"name": "Luxemburg", "currency": "€", "features": {"pipeline": False, "advanced_pricing": True}},
+    "NL": {"name": "Niederlande", "currency": "€", "features": {"pipeline": False, "advanced_pricing": True}},
+    "UK": {"name": "England", "currency": "£", "features": {"pipeline": False, "advanced_pricing": True}},
+    "IE": {"name": "Irland", "currency": "€", "features": {"pipeline": False, "advanced_pricing": True}},
+    "SC": {"name": "Schottland", "currency": "£", "features": {"pipeline": False, "advanced_pricing": True}},
+    "FI": {"name": "Finnland", "currency": "€", "features": {"pipeline": False, "advanced_pricing": True}},
+    "SE": {"name": "Schweden", "currency": "SEK", "features": {"pipeline": False, "advanced_pricing": True}},
+    "DK": {"name": "Dänemark", "currency": "DKK", "features": {"pipeline": False, "advanced_pricing": True}},
+    "NO": {"name": "Norwegen", "currency": "NOK", "features": {"pipeline": False, "advanced_pricing": True}},
+    "PL": {"name": "Polen", "currency": "PLN", "features": {"pipeline": False, "advanced_pricing": True}},
+    "CZ": {"name": "Tschechien", "currency": "CZK", "features": {"pipeline": False, "advanced_pricing": True}}
+}
+
+# =====================================================
+# 🧠 Supabase Client
+# =====================================================
+supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+
+# =====================================================
+# 🔧 Session State
+# =====================================================
+st.session_state.setdefault("logged_in", False)
+st.session_state.setdefault("is_admin", False)
+
+# =====================================================
+# 🔐 Login
+# =====================================================
+def login(password):
+    if password == USER_PASSWORD or password == SILENT_USER_PASSWORD:
+        st.session_state.logged_in = True
+        st.session_state.is_admin = False
+        st.rerun()
+    elif password == ADMIN_PASSWORD:
+        st.session_state.logged_in = True
+        st.session_state.is_admin = True
+        st.rerun()
+    else:
+        st.error("❌ Falsches Passwort")
+
+if not st.session_state.get("logged_in", False):
+    st.header("🔐 Login")
+    pw = st.text_input("Passwort", type="password")
+    if st.button("Login"):
+        login(pw)
+    st.stop()
+
+# =====================================================
+# Admin: Länder freischalten
+# =====================================================
+if st.session_state.is_admin:
+    st.header("👑 Admin: Länder Freigabe")
+    # Daten aus Supabase
+    vis_data = supabase.table("visible_countries").select("*").execute()
+    vis_df = pd.DataFrame(vis_data.data)
+
+    for idx, row in vis_df.iterrows():
+        country_name = COUNTRY_CONFIG[row["country_code"]]["name"]
+        visible = st.checkbox(country_name, value=row["visible"])
+        if visible != row["visible"]:
+            supabase.table("visible_countries").update({
+                "visible": visible,
+                "updated_at": datetime.utcnow().isoformat()
+            }).eq("country_code", row["country_code"]).execute()
+    st.stop()
+
+# =====================================================
+# Nutzer: nur sichtbare Länder
+# =====================================================
+vis_data = supabase.table("visible_countries").select("*").eq("visible", True).execute()
+visible_df = pd.DataFrame(vis_data.data)
+visible_countries = list(visible_df["country_code"])
+
+if "context" not in st.session_state:
+    st.subheader("🌍 Land auswählen")
+    selected_country = st.selectbox(
+        "Land",
+        visible_countries,
+        format_func=lambda x: COUNTRY_CONFIG[x]["name"]
+    )
+    if st.button("Starten"):
+        st.session_state.context = {"country": selected_country}
+        st.rerun()
+
+ctx = st.session_state.context
+
+# =====================================================
+# Seiten-Navigation (Feature Flags)
+# =====================================================
+ALL_PAGES = ["Platform", "Cardpayment", "Pricing", "Contractnumbers", "Radien", "Pipeline", "Restaurants"]
+allowed_pages = ALL_PAGES.copy()
+country_features = COUNTRY_CONFIG[ctx["country"]]["features"]
+if not country_features.get("pipeline", False):
+    allowed_pages.remove("Pipeline")
+
+page = st.sidebar.radio("Navigation", allowed_pages)
+
+# =====================================================
+# Dummy Funktionen (hier länderspezifisch anpassen)
+# =====================================================
+def show_platform(): st.header(f"Platform ({ctx['country']})")
+def show_cardpayment(): st.header(f"Cardpayment ({ctx['country']})")
+def show_pricing(): st.header(f"Pricing ({ctx['country']})")
+def show_contractnumbers(): st.header(f"Contractnumbers ({ctx['country']})")
+def show_radien(): st.header(f"Radien ({ctx['country']})")
+def show_pipeline(): st.header(f"Pipeline ({ctx['country']})")
+def show_restaurants(): st.header(f"Restaurants ({ctx['country']})")
+
+if page == "Platform": show_platform()
+elif page == "Cardpayment": show_cardpayment()
+elif page == "Pricing": show_pricing()
+elif page == "Contractnumbers": show_contractnumbers()
+elif page == "Radien": show_radien()
+elif page == "Pipeline": show_pipeline()
+elif page == "Restaurants": show_restaurants()
